@@ -62,7 +62,7 @@ RUN ./configure --prefix=/home1/irteam/apps/pcre_8.43 \
     && make && make install
 
 WORKDIR /home1/irteam/apps/httpd-2.4.41
-RUN ./configure --prefix=/home1/irteam/apps/apache_2.4.41 --enable-module=so --enable-module=so --enable-so --enable-mods-shared=ssl --with-ssl=/usr/lib64/openssl --enable-ssl=shared --with-pcre=/home1/irteam/apps/pcre/bin/pcre-config
+RUN ./configure --prefix=/home1/irteam/apps/apache_2.4.41 --enable-module=so --enable-module=so --enable-so --enable-mods-shared=ssl --with-ssl=/usr/lib64/openssl --enable-ssl=shared --with-pcre=/home1/irteam/apps/pcre/bin/pcre-config \
     && make && make install
 
 WORKDIR /home1/irteam/apps/
