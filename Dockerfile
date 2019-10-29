@@ -25,7 +25,7 @@ USER irteamsu
 RUN sudo yum clean all \
  && sudo sed -i "s/en_US/all/" /etc/yum.conf  \
  && sudo yum -y reinstall glibc-common
-  
+
 RUN sudo yum -y install tar vim telnet net-tools curl openssl openssl-devel \
  && sudo yum -y install apr apr-util apr-devel apr-util-devel \
  && sudo yum -y install elinks locate python-setuptools \
@@ -62,19 +62,20 @@ RUN ./configure --prefix=/home1/irteam/apps/pcre_8.43 \
     && make && make install
 
 WORKDIR /home1/irteam/apps/httpd-2.4.41
-RUN ./configure --prefix=/home1/irteam/apps/apache_2.4.41 --enable-module=so --enable-module=so --enable-so --enable-mods-shared=ssl --with-ssl=/usr/lib64/openssl --enable-ssl=shared --with-pcre=/home1/irteam/apps/pcre/bin/pcre-config \
+RUN ./configure --prefix=/home1/irteam/apps/apache_2.4.41 --enable-module=so --enable-mods-shared=ssl --with-ssl=/usr/lib64/openssl --enable-ssl=shared --with-pcre=/home1/irteam/apps/pcre/bin/pcre-config \
     && make && make install
 
 WORKDIR /home1/irteam/apps/
 RUN mv apache-tomcat-9.0.4 tomcat1-9.0.4 \
     && tar xvfz apache-tomcat-9.0.4.tar.gz \
-    && mv apache-tomcat-9.0.4 tomcat2-9.0.4 
+    && mv apache-tomcat-9.0.4 tomcat2-9.0.4
 
 RUN ln -s pcre_8.43 pcre \
     && ln -s apache_2.4.41 apache \
     && ln -s tomcat1-9.0.4 tomcat1 \
     && ln -s tomcat2-9.0.4 tomcat2 \
     && ln -s tomcat-connectors-1.2.46-src mod_jk
+
 
 RUN rmdir ~/apps/apache/logs \
     && mkdir ~/logs/apache \
@@ -83,7 +84,7 @@ RUN rmdir ~/apps/apache/logs \
 RUN rmdir ~/apps/tomcat1/logs \
     && mkdir ~/logs/tomcat1 \
     && ln -s ~/logs/tomcat1/ ~/apps/tomcat1/logs
-    
+
 RUN rmdir ~/apps/tomcat2/logs \
     && mkdir ~/logs/tomcat2 \
     && ln -s ~/logs/tomcat2/ ~/apps/tomcat2/logs
@@ -93,7 +94,7 @@ RUN cd mod_jk/native \
     && make && make install
 
 RUN mkdir ~/apps/gz_dir \
-    && mv ~/apps/*.tar.gz ~/apps/gz_dir    
+    && mv ~/apps/*.tar.gz ~/apps/gz_dir
 
 WORKDIR /home1/irteam/apps/apache/conf/
 RUN echo 'LoadModule jk_module modules/mod_jk.so' >> httpd.conf \
@@ -128,9 +129,20 @@ RUN sed -i "22s/8005/8105/" server.xml \
 
 WORKDIR /home1/irteam/apps/tomcat2/conf/
 RUN sed -i "22s/8005/8205/" server.xml \
-	&& sed -i "69s/8080/8081/" server.xml \
-	&& sed -i "116s/8009/8209/" server.xml
+        && sed -i "69s/8080/8081/" server.xml \
+        && sed -i "116s/8009/8209/" server.xml
 
+WORKDIR /home1/irteam/apps/apache/conf/
+RUN sed -i "89s/#//" httpd.conf \
+    && sed -i "137s/#//" httpd.conf \
+    && sed -i "498s/#//" httpd.conf
+    
+RUN openssl genrsa -aes256 -out tmp-server.key -passout pass:1234 2048 \
+    && openssl rsa -in tmp-server.key -out server.key -passin pass:1234 \
+    && openssl req -new -key server.key -out server.csr -subj "/C=KR/ST=Gyeonggi-do/L=Seongnam-si/O=global Security/OU=IT" \
+    && openssl x509 -req -days 365 -in server.csr -signkey server.key -out server.crt
+
+RUN sed -i "122s/.*/JkMountFile conf\/uriworkermap.properties/g" ./extra/httpd-ssl.conf
 
 
 USER irteamsu
@@ -153,5 +165,6 @@ RUN sudo chown root:irteam tomcat1/bin/startup.sh \
 
 
 ENV LANG=ko_KR.utf8 TZ=Asia/Seoul
- 
+
 CMD ["/bin/bash"]
+
