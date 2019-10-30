@@ -125,12 +125,16 @@ RUN touch workers.properties \
 
 WORKDIR /home1/irteam/apps/tomcat1/conf/
 RUN sed -i "22s/8005/8105/" server.xml \
-    && sed -i "116s/8009/8109/" server.xml
+    && sed -i "116s/8009/8109/" server.xml \
+    && sed -i "133s/<\!--//" server.xml \
+    && sed -i "135s/-->//" server.xml
 
 WORKDIR /home1/irteam/apps/tomcat2/conf/
 RUN sed -i "22s/8005/8205/" server.xml \
-        && sed -i "69s/8080/8081/" server.xml \
-        && sed -i "116s/8009/8209/" server.xml
+    && sed -i "69s/8080/8081/" server.xml \
+    && sed -i "116s/8009/8209/" server.xml \
+    && sed -i "133s/<\!--//" server.xml \
+    && sed -i "135s/-->//" server.xml
 
 WORKDIR /home1/irteam/apps/apache/conf/
 RUN sed -i "89s/#//" httpd.conf \
