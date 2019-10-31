@@ -30,7 +30,8 @@ RUN sudo yum -y install tar vim telnet net-tools curl openssl openssl-devel \
  && sudo yum -y install apr apr-util apr-devel apr-util-devel \
  && sudo yum -y install elinks locate python-setuptools \
  && sudo yum -y install gcc make gcc-c++ wget \
- && sudo yum -y install  java-1.8.0-openjdk-devel.x86_64 \
+ && sudo yum -y install java-1.8.0-openjdk-devel.x86_64 \
+ && sudo yum -y install cmake ncurses ncurses-devel \
  && sudo yum clean all
 
 
@@ -45,14 +46,16 @@ RUN wget http://apache.mirror.cdnetworks.com//apr/apr-1.7.0.tar.gz \
     && wget ftp://ftp.pcre.org/pub/pcre/pcre-8.43.tar.gz \
     && wget http://mirror.navercorp.com/apache//httpd/httpd-2.4.41.tar.gz \
     && wget http://archive.apache.org/dist/tomcat/tomcat-9/v9.0.4/bin/apache-tomcat-9.0.4.tar.gz \
-    && wget http://apache.tt.co.kr/tomcat/tomcat-connectors/jk/tomcat-connectors-1.2.46-src.tar.gz
+    && wget http://apache.tt.co.kr/tomcat/tomcat-connectors/jk/tomcat-connectors-1.2.46-src.tar.gz \
+    && wget https://downloads.mysql.com/archives/get/file/mysql-5.7.27.tar.gz
 
 RUN tar xvfz httpd-2.4.41.tar.gz \
     && tar xvfz apr-1.7.0.tar.gz \
     && tar xvfz apr-util-1.6.1.tar.gz \
     && tar xvfz pcre-8.43.tar.gz \
     && tar xvfz apache-tomcat-9.0.4.tar.gz \
-    && tar xvfz tomcat-connectors-1.2.46-src.tar.gz
+    && tar xvfz tomcat-connectors-1.2.46-src.tar.gz \
+    && tar xvfz mysql-5.7.27.tar.gz
 
 RUN mv apr-1.7.0 ./httpd-2.4.41/srclib/apr \
     && mv apr-util-1.6.1 ./httpd-2.4.41/srclib/apr-util
@@ -75,7 +78,6 @@ RUN ln -s pcre_8.43 pcre \
     && ln -s tomcat1-9.0.4 tomcat1 \
     && ln -s tomcat2-9.0.4 tomcat2 \
     && ln -s tomcat-connectors-1.2.46-src mod_jk
-
 
 RUN rmdir ~/apps/apache/logs \
     && mkdir ~/logs/apache \
@@ -147,6 +149,22 @@ RUN openssl genrsa -aes256 -out tmp-server.key -passout pass:1234 2048 \
     && openssl x509 -req -days 365 -in server.csr -signkey server.key -out server.crt
 
 RUN sed -i "122s/.*/JkMountFile conf\/uriworkermap.properties/g" ./extra/httpd-ssl.conf
+
+WORKDIR /home1/apps/mysql-5.7.27/
+RUN cmake \
+    -DCMAKE_INSTALL_PREFIX=/home1/irteam/apps/mysql \
+    -DMYSQL_DATADIR=/home1/irteam/apps/mysql/data \
+    -DMYSQL_UNIX_ADDR=/home1/irteam/apps/mysql/tmp/myqlx.sock \
+    -DSYSCONFDIR=/home1/irteam/apps/mysql/etc \
+    -DENABLED_LOCAL_INFILE=1 \
+    -DMYSQL_TCP_PORT=13306 \
+    -DDEFAULT_CHARSET=utf8 \
+    -DDEFAULT_COLLATION=utf8_general_ci \
+    -DWITH_EXTRA_CHARSETS=all \
+    -DDOWNLOAD_BOOST=1 \
+    -DWITH_BOOST=$HOME/apps/my_boost
+
+RUM make clean && make && make install
 
 
 USER irteamsu
