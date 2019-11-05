@@ -150,21 +150,38 @@ RUN openssl genrsa -aes256 -out tmp-server.key -passout pass:1234 2048 \
 
 RUN sed -i "122s/.*/JkMountFile conf\/uriworkermap.properties/g" ./extra/httpd-ssl.conf
 
-WORKDIR /home1/apps/mysql-5.7.27/
+WORKDIR /home1/irteam/apps/mysql-5.7.27/
 RUN cmake \
     -DCMAKE_INSTALL_PREFIX=/home1/irteam/apps/mysql \
     -DMYSQL_DATADIR=/home1/irteam/apps/mysql/data \
     -DMYSQL_UNIX_ADDR=/home1/irteam/apps/mysql/tmp/myqlx.sock \
     -DSYSCONFDIR=/home1/irteam/apps/mysql/etc \
-    -DENABLED_LOCAL_INFILE=1 \
-    -DMYSQL_TCP_PORT=13306 \
     -DDEFAULT_CHARSET=utf8 \
     -DDEFAULT_COLLATION=utf8_general_ci \
     -DWITH_EXTRA_CHARSETS=all \
     -DDOWNLOAD_BOOST=1 \
     -DWITH_BOOST=$HOME/apps/my_boost
 
-RUM make clean && make && make install
+RUN make && make install
+
+WORKDIR /home1/irteam/apps/mysql/
+RUN mkdir tmp etc && touch etc/my.cnf
+
+RUN echo -e '[client]\nuser=root\npassword=1234\nport = 13306\nsocket = /home1/irteam/apps/mysql/tmp/mysql.sock' >> etc/my.cnf\
+    && echo -e '[mysqld]\nuser=irteam\nport = 13306\nbasedir=/home1/irteam/apps/mysql\ndatadir=/home1/irteam/apps/mysql/data' >> etc/my.cnf \
+    && echo -e 'socket = /home1/irteam/apps/mysql/tmp/mysql.sock\nskip-external-locking\nkey_buffer_size = 384M\nmax_allowed_packet = 1M\ntable_open_cache = 512\nsort_buffer_size = 2M\nread_buffer_size = 2M\nread_rnd_buffer_size = 8M\nmyisam_sort_buffer_size = 64M\nthread_cache_size = 8\nquery_cache_size = 32M\nskip-name-resolve' >> etc/my.cnf \
+    && echo -e 'max_connections = 1000\nmax_connect_errors = 1000\nwait_timeout= 60\nexplicit_defaults_for_timestamp\nsymbolic-links=0\nlog-error=/home1/irteam/apps/mysql/data/mysqld.log\npid-file=/home1/irteam/apps/mysql/tmp/mysqld.pid\n' >> etc/my.cnf \
+    && echo -e 'character-set-client-handshake=FALSE\ninit_connect = SET collation_connection = utf8_general_ci\ninit_connect = SET NAMES utf8\ncharacter-set-server = utf8\ncollation-server = utf8_general_ci' >> etc/my.cnf
+
+
+RUN echo -e 'default-storage-engine = InnoDB\ninnodb_buffer_pool_size = 503MB\ninnodb_data_file_path = ibdata1:10M:autoextend\ninnodb_write_io_threads = 8\ninnodb_read_io_threads = 8\ninnodb_thread_concurrency = 16\ninnodb_flush_log_at_trx_commit = 1\ninnodb_log_buffer_size = 8M\ninnodb_log_file_size = 128M\ninnodb_log_files_in_group = 3\ninnodb_max_dirty_pages_pct = 90\ninnodb_lock_wait_timeout = 120' >> etc/my.cnf
+
+RUN echo -e '\nskip-grant-tables' >> etc/my.cnf
+
+RUN bin/mysqld --initialize \ 
+    && support-files/mysql.server start \
+    && bin/mysql <<< "USE mysql; CREATE TABLE nitPlatform ( id int auto_increment, platform varchar(255), manager varchar(255), PRIMARY KEY (id) ); INSERT INTO nitPlatform (platform, manager) VALUES('NELO', 'GwanJong'); INSERT INTO nitPlatform (platform, manager) VALUES('APIGW', 'HyeSeon'); INSERT INTO nitPlatform (platform, manager) VALUES('NPot', 'JiWon'); INSERT INTO nitPlatform (platform, manager) VALUES('Arcus', 'HwanHee'); INSERT INTO nitPlatform (platform, manager) VALUES('PINPOINT', 'TaeJoong'); INSERT INTO nitPlatform (platform, manager) VALUES('OWFS', 'TaeIk'); INSERT INTO nitPlatform (platform, manager) VALUES('Nubes', 'GwangHyun'); INSERT INTO nitPlatform (platform, manager) VALUES('nBase', 'JaeMin');" \
+    && support-files/mysql.server stop
 
 
 USER irteamsu
@@ -181,12 +198,19 @@ RUN sudo chown root:irteam tomcat1/bin/startup.sh \
     && sudo chown root:irteam tomcat2/bin/startup.sh \
     && sudo chmod 4755 tomcat2/bin/startup.sh
 
+RUN sudo chown irteam:irteam mysql/data \
+    && sudo chmod -R 777 mysql/data
 
 # USER irteam
 # WORKDIR /home1/irteam/
 
 
 ENV LANG=ko_KR.utf8 TZ=Asia/Seoul
+
+
+EXPOSE 13306
+EXPOSE 80 443
+EXPOSE 8080 8081
 
 CMD ["/bin/bash"]
 
