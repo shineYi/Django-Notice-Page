@@ -126,13 +126,15 @@ RUN cmake \
 RUN make && make install
 
 WORKDIR /home1/irteam/apps/nagioscore-nagios-4.4.5/
-# RUN ./configure --prefix=/home1/irteam/apps/nagios --exec-prefix=/home1/irteam/apps/nagios/exec --with-this-user --with-httpd-conf=/home1/irteam/apps/apache/conf --with-logdir=/home1/irteam/logs/nagios --with-initdir=/home1/irteam/apps/nagios/init.d \
-#    && make all && make install \
-#    && make install-config && make install-commandmode \
-#    && make install-webconf
+RUN ./configure --prefix=/home1/irteam/apps/nagios --exec-prefix=/home1/irteam/apps/nagios/exec --with-this-user --with-httpd-conf=/home1/irteam/apps/apache/conf --with-logdir=/home1/irteam/logs/nagios --with-initdir=/home1/irteam/apps/nagios/init.d \
+    && make all && make install \
+    && make install-config && make install-commandmode \
+    && make install-webconf
 
-# USER irteamsu
-# RUN sudo make install-init
+WORKDIR /home1/irteam/apps/nagios-plugins-release-2.2.1/
+RUN ./tools/setup \
+    && ./configure --prefix=/home1/irteam/apps/nagios --exec-prefix=/home1/irteam/apps/nagios/plugin --with-mysql=/home1/irteam/apps/mysql/bin/mysql_config \
+    && make && make install
 
 
 # Create link for logs
@@ -173,7 +175,7 @@ RUN echo 'LoadModule jk_module modules/mod_jk.so' >> httpd.conf \
     && echo '</IfModule>' >> httpd.conf
 
 RUN touch uriworkermap.properties \
-    && echo '/*=load_balancer' >> uriworkermap.properties
+    && echo '/*.jsp=load_balancer' >> uriworkermap.properties
 
 RUN touch workers.properties \
     && echo 'worker.list=load_balancer' >> workers.properties \
@@ -206,14 +208,16 @@ RUN sed -i "122s/.*/JkMountFile conf\/uriworkermap.properties/g" ./extra/httpd-s
 # Connect php and apache
 
 RUN sed -i "1198s/=/=\/home1\/irteam\/apps\/mysql\/tmp\/mysqld.sock/" php.ini
-
 RUN sed -i "147s/#//" httpd.conf
-
 RUN sed -i "257s/html/html index.php/" httpd.conf
 
 RUN perl -p -i -e '$.==394 and print "AddType application/x-httpd-php .php .html .php5\n"' httpd.conf \
     && perl -p -i -e '$.==395 and print "AddType application/x-httpd-php-source .phps\n"' httpd.conf
 
+
+# Setting for Nagios
+RUN echo "Include conf/nagios.conf" >> httpd.conf \
+    && ../bin/htpasswd -b -c ~/apps/nagios/etc/htpasswd.users nagiosadmin nagios12
 
 
 # Change port num and clusterting setting on Tomcat1,2
@@ -276,6 +280,14 @@ RUN sudo chown root:irteam tomcat1/bin/startup.sh \
     && sudo chmod 4755 tomcat1/bin/startup.sh \
     && sudo chown root:irteam tomcat2/bin/startup.sh \
     && sudo chmod 4755 tomcat2/bin/startup.sh
+
+WORKDIR /home1/irteam/nagioscore-nagios-4.4.5/
+RUN sudo make install-init
+
+WORKDIR /home1/irteam/apps/nagios/
+RUN sudo chown irteam:irteam init.d \
+    && sudo chown root:irteam init.d/nagios \
+    && sudo chmod 4755 init.d/nagios
 
 
 
