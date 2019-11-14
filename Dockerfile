@@ -133,7 +133,7 @@ RUN ./configure --prefix=/home1/irteam/apps/nagios --exec-prefix=/home1/irteam/a
 
 WORKDIR /home1/irteam/apps/nagios-plugins-release-2.2.1/
 RUN ./tools/setup \
-    && ./configure --prefix=/home1/irteam/apps/nagios --exec-prefix=/home1/irteam/apps/nagios/plugin --with-mysql=/home1/irteam/apps/mysql/bin/mysql_config \
+    && ./configure --prefix=/home1/irteam/apps/nagios --exec-prefix=/home1/irteam/apps/nagios/exec --with-mysql=/home1/irteam/apps/mysql/bin/mysql_config \
     && make && make install
 
 
@@ -163,6 +163,8 @@ RUN mkdir ~/apps/gz_dir \
 
 WORKDIR /home1/irteam/apps/apache/conf/
 
+RUN sed -i "199s/#//" httpd.conf \
+    && sed -i "199s/www.example.com:80/localhost/" httpd.conf
 
 # Connect tomcat1,2 and apache
 
@@ -285,6 +287,7 @@ WORKDIR /home1/irteam/nagioscore-nagios-4.4.5/
 RUN sudo make install-init
 
 WORKDIR /home1/irteam/apps/nagios/
+RUN mv sbin exec/sbin
 RUN sudo chown irteam:irteam init.d \
     && sudo chown root:irteam init.d/nagios \
     && sudo chmod 4755 init.d/nagios
