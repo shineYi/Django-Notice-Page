@@ -24,10 +24,6 @@ RUN /usr/bin/localedef --force --inputfile en_US --charmap UTF-8 en_US.UTF-8 && 
 
 USER irteamsu
 
-# RUN sudo yum clean all \
-# && sudo sed -i "s/en_US/all/" /etc/yum.conf  \
-#  && sudo yum -y reinstall glibc-common
-
 RUN sudo yum clean all \
   && sudo yum -y reinstall glibc-common
 
@@ -43,16 +39,11 @@ RUN sudo yum -y install tar vim telnet net-tools curl openssl openssl-devel \
 RUN sudo yum -y install libxml2 libxml2-devel \
     && sudo yum -y install gd gd-devel postfix unzip \
     && sudo yum -y install gettext autoconf automake net-snmp net-snmp-utils \
-    && sudo yum -y install epel-release perl-Net-SNMP \
+    && sudo yum -y install glibc epel-release perl-Net-SNMP \
+    && sudo yum install -y perl-XML-XPath perl-libwww-perl \
     && sudo yum remove -y mariadb-libs-5.5.64-1.el7.x86_64
 
-# RUN sudo touch /etc/environment \
-#    && sudo chmod o+w /etc/environment \
-#    && echo "LC_ALL=en_US.UTF-8" >> /etc/environment \
-#    && echo "LANG=en_US.UTF-8" >> /etc/environment \
-#    && sudo chmod o-w /etc/environment
-
-
+RUN sudo chmod 755 /home1/irteam
 
 USER irteam
 
@@ -90,7 +81,6 @@ RUN cp mysql-connector-java-8.0.18/mysql-connector-java-8.0.18.jar tomcat1/lib/ 
 RUN ln -s tomcat-connectors-1.2.46-src mod_jk
 
 
-
 # Makefile
 
 WORKDIR /home1/irteam/apps/pcre-8.43
@@ -126,14 +116,26 @@ RUN cmake \
 RUN make && make install
 
 WORKDIR /home1/irteam/apps/nagioscore-nagios-4.4.5/
-RUN ./configure --prefix=/home1/irteam/apps/nagios --exec-prefix=/home1/irteam/apps/nagios/exec --with-this-user --with-httpd-conf=/home1/irteam/apps/apache/conf --with-logdir=/home1/irteam/logs/nagios --with-initdir=/home1/irteam/apps/nagios/init.d \
-    && make all && make install \
-    && make install-config && make install-commandmode \
+RUN ./configure --prefix=/home1/irteam/apps/nagios --with-nagios-user=irteam --with-nagios-group=irteam --with-command-user=irteam --with-command-group=irteam --with-httpd-conf=/home1/irteam/apps/apache/conf --with-logdir=/home1/irteam/logs/nagios --with-initdir=/home1/irteam/apps/nagios/init.d 
+
+RUN make all && make install
+
+RUN make install-config && make install-commandmode \
     && make install-webconf
 
+USER irteamsu
+RUN sudo make install-init
+
+WORKDIR /home1/irteam/apps/nagios/
+RUN sudo chown irteam:irteam init.d \
+    && sudo chown root:irteam init.d/nagios \
+    && sudo chmod 4755 init.d/nagios
+
+
+USER irteam
 WORKDIR /home1/irteam/apps/nagios-plugins-release-2.2.1/
 RUN ./tools/setup \
-    && ./configure --prefix=/home1/irteam/apps/nagios --exec-prefix=/home1/irteam/apps/nagios/exec --with-mysql=/home1/irteam/apps/mysql/bin/mysql_config \
+    && ./configure --prefix=/home1/irteam/apps/nagios --with-mysql=/home1/irteam/apps/mysql/bin/mysql_config \
     && make && make install
 
 
@@ -268,11 +270,63 @@ RUN bin/mysqld --initialize \
 
 
 
+# Set Nagios Monitoring for Tomcat & MySQL
+
+# Create Tomcat manager account
+WORKDIR /home1/irteam/apps/tomcat1/conf/
+RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
+    && echo "<role rolename="manager-script"/>" >> tomcat-user.xml \
+    && echo "<role rolename="manager-status"/>" >> tomcat-user.xml \
+    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-user.xml
+
+WORKDIR /home1/irteam/apps/tomcat2/conf/
+RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
+    && echo "<role rolename="manager-script"/>" >> tomcat-user.xml \
+    && echo "<role rolename="manager-status"/>" >> tomcat-user.xml \
+    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-user.xml
+
+# Install check_tomcat plugin
+WORKDIR /home1/irteam/apps/nagios/libexec/
+RUN curl "https://exchange.nagios.org/components/com_mtree/attachment.php?link_id=2522&cf_id=24" -o check_tomcat.pl
 
 USER irteamsu
+RUN sudo chmod u+x check_tomcat.pl
 
-WORKDIR /home1/irteamsu/
-RUN sudo chmod 755 /home1/irteam
+USER irteam
+RUN ./check_tomcat.pl -I 127.0.0.1 -p 8080 -l tomacatadmin -a tomcat12 -w 20%,30% -c 10%,20%
+RUN ./check_tomcat.pl -I 127.0.0.1 -p 8081 -l tomacatadmin -a tomcat12 -w 20%,30% -c 10%,20%
+
+
+WORKDIR /home1/irteam/apps/nagios/etc/objects/
+RUN echo "define command {" >> commands.cfg \
+    && echo "    command_name    check_tomcat" >> commands.cfg \
+    && echo "    command_line    /bin/sh -c \"$USER1$/check_tomcat.pl -H $HOSTADDRESS$ -p $ARG1$ -l $ARG2$ -a $ARG3$\"" >> commands.cfg \
+    && echo "}" >> commands.cfg
+
+RUN echo -e "define service {\n\n" >> localhost.cfg \
+    && echo "    use                     local-service" >> localhost.cfg \
+    && echo "    host_name               localhost" >> localhost.cfg \
+    && echo "    service_description     Tomcat1" >> localhost.cfg \
+    && echo "    check_command           check_tomcat!8080!tomcatadmin!tomcat12" >> localhost.cfg \
+    && echo "    check_interval          1" >> localhost.cfg \
+    && echo -e "    retry_interval          1\n}" >> localhost.cfg
+
+RUN echo -e "define service {\n\n" >> localhost.cfg \
+    && echo "    use                     local-service" >> localhost.cfg \
+    && echo "    host_name               localhost" >> localhost.cfg \
+    && echo "    service_description     Tomcat1" >> localhost.cfg \
+    && echo "    check_command           check_tomcat!8080!tomcatadmin!tomcat12" >> localhost.cfg \
+    && echo "    check_interval          1" >> localhost.cfg \
+    && echo -e "    retry_interval          1\n}" >> localhost.cfg
+
+
+#
+# TODO: Install check_mysql plugin
+#
+
+
+
+USER irteamsu
 
 WORKDIR /home1/irteam/apps/
 RUN sudo chown root:irteam apache/bin/httpd \
@@ -282,15 +336,6 @@ RUN sudo chown root:irteam tomcat1/bin/startup.sh \
     && sudo chmod 4755 tomcat1/bin/startup.sh \
     && sudo chown root:irteam tomcat2/bin/startup.sh \
     && sudo chmod 4755 tomcat2/bin/startup.sh
-
-WORKDIR /home1/irteam/nagioscore-nagios-4.4.5/
-RUN sudo make install-init
-
-WORKDIR /home1/irteam/apps/nagios/
-RUN mv sbin exec/sbin
-RUN sudo chown irteam:irteam init.d \
-    && sudo chown root:irteam init.d/nagios \
-    && sudo chmod 4755 init.d/nagios
 
 
 
