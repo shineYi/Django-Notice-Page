@@ -15,7 +15,8 @@ RUN mkdir /home1 \
 
 RUN echo 'export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.232.b09-0.el7_7.x86_64' >> /etc/profile \
     && echo 'export CLASSPATH=$JAVA_HOME/lib:$JAVA_HOME/jre/lib/ext:$JAVA_HOME/lib/tools.jar' >> /etc/profile \
-    && echo 'PATH=/bin:/usr/bin:/usr/local/bin:$JAVA_HOME/bin:/home1/irteam/apps/tomcat1/bin:/home1/irteam/apps/tomcat2/bin' >> /etc/profile \
+    && echo 'export APACHE_HOME=/home1/irteam/apps/apache' >> /etc/profile \
+    && echo 'PATH=/bin:/usr/bin:/usr/local/bin:$JAVA_HOME/bin:/home1/irteam/apps/tomcat1/bin:/home1/irteam/apps/tomcat2/bin:$APACHE_HOME/bin' >> /etc/profile \
     && source /etc/profile
 
 RUN /usr/bin/localedef --force --inputfile en_US --charmap UTF-8 en_US.UTF-8 && \
@@ -43,6 +44,10 @@ RUN sudo yum -y install libxml2 libxml2-devel \
     && sudo yum install -y perl-XML-XPath perl-libwww-perl \
     && sudo yum remove -y mariadb-libs-5.5.64-1.el7.x86_64
 
+RUN sudo yum groupinstall -y "Development Tools" \
+    && sudo yum install -y readline-devel sqlite-devel \
+    && sudo yum install -y libffi-dev
+
 RUN sudo chmod 755 /home1/irteam
 
 USER irteam
@@ -61,9 +66,13 @@ RUN wget http://apache.mirror.cdnetworks.com//apr/apr-1.7.0.tar.gz \
     && wget https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-8.0.18.tar.gz \
     && wget http://museum.php.net/php5/php-5.5.0.tar.gz \
     && wget https://github.com/NagiosEnterprises/nagioscore/archive/nagios-4.4.5.tar.gz \
-    && wget --no-check-certificate -O nagios-plugins.tar.gz https://github.com/nagios-plugins/nagios-plugins/archive/release-2.2.1.tar.gz
+    && wget --no-check-certificate -O nagios-plugins.tar.gz https://github.com/nagios-plugins/nagios-plugins/archive/release-2.2.1.tar.gz \
+    && wget https://github.com/GrahamDumpleton/mod_wsgi/archive/4.6.5.tar.gz
 
 RUN find . -name "*.tar.gz" -exec tar xvfz {} \;
+
+RUN wget https://www.python.org/ftp/python/3.7.4/Python-3.7.4.tgz \
+    && tar xvfz Python-3.7.4.tgz
 
 RUN mv apache-tomcat-9.0.4 tomcat1 \
     && tar xvfz apache-tomcat-9.0.4.tar.gz \
@@ -81,6 +90,7 @@ RUN cp mysql-connector-java-8.0.18/mysql-connector-java-8.0.18.jar tomcat1/lib/ 
 RUN ln -s tomcat-connectors-1.2.46-src mod_jk
 
 
+
 # Makefile
 
 WORKDIR /home1/irteam/apps/pcre-8.43
@@ -89,10 +99,6 @@ RUN ./configure --prefix=/home1/irteam/apps/pcre \
 
 WORKDIR /home1/irteam/apps/httpd-2.4.41
 RUN ./configure --prefix=/home1/irteam/apps/apache --enable-module=so --enable-mods-shared=ssl --with-ssl=/usr/lib64/openssl --enable-ssl=shared --with-pcre=/home1/irteam/apps/pcre/bin/pcre-config \
-    && make && make install
-
-WORKDIR /home1/irteam/apps/mod_jk/native/ \
-RUN ./configure --with-apxs=/home1/irteam/apps/apache/bin/apxs \
     && make && make install
 
 WORKDIR /home1/irteam/apps/php-5.5.0/
@@ -115,32 +121,21 @@ RUN cmake \
 
 RUN make && make install
 
-WORKDIR /home1/irteam/apps/nagioscore-nagios-4.4.5/
-RUN ./configure --prefix=/home1/irteam/apps/nagios --with-nagios-user=irteam --with-nagios-group=irteam --with-command-user=irteam --with-command-group=irteam --with-httpd-conf=/home1/irteam/apps/apache/conf --with-logdir=/home1/irteam/logs/nagios --with-initdir=/home1/irteam/apps/nagios/init.d 
+WORKDIR /home1/irteam/apps/mod_jk/native/
+RUN ./configure --with-apxs=/home1/irteam/apps/apache/bin/apxs \
+    && make && make install
 
-RUN make all && make install
+WORKDIR /home1/irteam/apps/Python-3.7.4/
+RUN ./configure --prefix=/home1/irteam/apps/python --enable-shared \
+    && make && make install
 
-RUN make install-config && make install-commandmode \
-    && make install-webconf
-
-USER irteamsu
-RUN sudo make install-init
-
-WORKDIR /home1/irteam/apps/nagios/
-RUN sudo chown irteam:irteam init.d \
-    && sudo chown root:irteam init.d/nagios \
-    && sudo chmod 4755 init.d/nagios
-
-
-USER irteam
-WORKDIR /home1/irteam/apps/nagios-plugins-release-2.2.1/
-RUN ./tools/setup \
-    && ./configure --prefix=/home1/irteam/apps/nagios --with-mysql=/home1/irteam/apps/mysql/bin/mysql_config \
+WORKDIR /home1/irteam/apps/mod_wsgi-4.6.5/
+RUN ./configure --prefix=/home1/irteam/apps/mod_wsgi --with-apxs=/home1/irteam/apps/apache/bin/apxs --with-python=/home1/irteam/apps/python/bin/python3.7 \
     && make && make install
 
 
+
 # Create link for logs
-USER irteam
 RUN rmdir ~/apps/apache/logs \
     && mkdir ~/logs/apache \
     && ln -s ~/logs/apache/ ~/apps/apache/logs
@@ -219,10 +214,6 @@ RUN perl -p -i -e '$.==394 and print "AddType application/x-httpd-php .php .html
     && perl -p -i -e '$.==395 and print "AddType application/x-httpd-php-source .phps\n"' httpd.conf
 
 
-# Setting for Nagios
-RUN echo "Include conf/nagios.conf" >> httpd.conf \
-    && ../bin/htpasswd -b -c ~/apps/nagios/etc/htpasswd.users nagiosadmin nagios12
-
 
 # Change port num and clusterting setting on Tomcat1,2
 
@@ -269,9 +260,6 @@ RUN bin/mysqld --initialize \
     && support-files/mysql.server stop
 
 
-
-# Set Nagios Monitoring for Tomcat & MySQL
-
 # Create Tomcat manager account
 WORKDIR /home1/irteam/apps/tomcat1/conf/
 RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
@@ -285,46 +273,45 @@ RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
     && echo "<role rolename="manager-status"/>" >> tomcat-user.xml \
     && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-user.xml
 
-# Install check_tomcat plugin
-WORKDIR /home1/irteam/apps/nagios/libexec/
-RUN curl "https://exchange.nagios.org/components/com_mtree/attachment.php?link_id=2522&cf_id=24" -o check_tomcat.pl
 
-USER irteamsu
-RUN sudo chmod u+x check_tomcat.pl
-
-USER irteam
-RUN ./check_tomcat.pl -I 127.0.0.1 -p 8080 -l tomacatadmin -a tomcat12 -w 20%,30% -c 10%,20%
-RUN ./check_tomcat.pl -I 127.0.0.1 -p 8081 -l tomacatadmin -a tomcat12 -w 20%,30% -c 10%,20%
-
-
-WORKDIR /home1/irteam/apps/nagios/etc/objects/
-RUN echo "define command {" >> commands.cfg \
-    && echo "    command_name    check_tomcat" >> commands.cfg \
-    && echo "    command_line    /bin/sh -c \"$USER1$/check_tomcat.pl -H $HOSTADDRESS$ -p $ARG1$ -l $ARG2$ -a $ARG3$\"" >> commands.cfg \
-    && echo "}" >> commands.cfg
-
-RUN echo -e "define service {\n\n" >> localhost.cfg \
-    && echo "    use                     local-service" >> localhost.cfg \
-    && echo "    host_name               localhost" >> localhost.cfg \
-    && echo "    service_description     Tomcat1" >> localhost.cfg \
-    && echo "    check_command           check_tomcat!8080!tomcatadmin!tomcat12" >> localhost.cfg \
-    && echo "    check_interval          1" >> localhost.cfg \
-    && echo -e "    retry_interval          1\n}" >> localhost.cfg
-
-RUN echo -e "define service {\n\n" >> localhost.cfg \
-    && echo "    use                     local-service" >> localhost.cfg \
-    && echo "    host_name               localhost" >> localhost.cfg \
-    && echo "    service_description     Tomcat1" >> localhost.cfg \
-    && echo "    check_command           check_tomcat!8080!tomcatadmin!tomcat12" >> localhost.cfg \
-    && echo "    check_interval          1" >> localhost.cfg \
-    && echo -e "    retry_interval          1\n}" >> localhost.cfg
+# Set shortcut
+echo "export APP_HOME=/home1/irteam/apps" >> ~/.bashrc \
+&& echo "export LD_LIBRARY_PATH=\$APP_HOME/python/lib" >> ~/.bashrc \
+&& echo "alias apache-start=\"\$APP_HOME/apache/bin/httpd -k start\"" >> ~/.bashrc \
+&& echo "alias apache-stop=\"\$APP_HOME/apache/bin/httpd -k stop\"" >> ~/.bashrc \
+&& echo "alias apache-restart=\"\$APP_HOME/apache/bin/httpd -k restart\"" >> ~/.bashrc \
+&& echo "alias tomcat1-start=\"\$APP_HOME/tomcat1/bin/startup.sh\"" >> ~/.bashrc \
+&& echo "alias tomcat1-stop=\"\$APP_HOME/tomcat1/bin/shutdown.sh\"" >> ~/.bashrc \
+&& echo "alias tomcat2-start=\"\$APP_HOME/tomcat2/bin/startup.sh\"" >> ~/.bashrc \
+&& echo "alias tomcat2-stop=\"\$APP_HOME/tomcat2/bin/shutdown.sh\"" >> ~/.bashrc \
+&& echo "alias mysql-start=\"\$APP_HOME/mysql/support-files/mysql.server start\"" >> ~/.bashrc \
+&& echo "alias mysql-stop=\"\$APP_HOME/mysql/support-files/mysql.server stop\"" >> ~/.bashrc \
+&& echo "alias mysql-restart=\"\$APP_HOME/mysql/support-files/mysql.server restart\"" >> ~/.bashrc \
+&& echo "alias python=\"\$APP_HOME/python/bin/python3.7\"" >> ~/.bashrc \
+&& echo "alias pip=\"\$APP_HOME/python/bin/pip3.7\"" >> ~/.bashrc
 
 
-#
-# TODO: Install check_mysql plugin
-#
+# Create Django Project
+WORKDIR /home1/irteam/apps/python
+RUN pip install --upgrade pip \
+    && pip install django==2.1.* \
+    && bin/django-admin startproject django_board . \
+    && ln -s /home1/irteam/apps/python/bin/django_board ~/django_board
 
+RUN echo "STATIC_ROOT = os.path.join(BASE_DIR, \"static/\")" >> django_board/settings.py \
+    sed -i "28s/\[\]/\'*\'/" django_board/settings.py
 
+# Setting Apache for Connect Django
+WORKDIR /home1/irteam/apps/apache/conf
+RUN echo "LoadFile /home1/irteam/apps/python/lib/libpython3.7m.so.1.0" >> httpd.conf \
+    && echo "LoadModule wsgi_module modules/mod_wsgi.so" >> httpd.conf \
+    && echo "WSGIScriptAlias / /home1/irteam/django_board/wsgi.py" >> httpd.conf \
+    && echo "WSGIPythonPath /home1/irteam/apps/python/bin" >> httpd.conf \
+    && echo "<Directory /home1/irteam/django_board>" >> httpd.conf \
+    && echo "<Files wsgi.py>" >> httpd.conf \
+    && echo "Require all granted" >> httpd.conf \
+    && echo "</Files>" >> httpd.conf \
+    && echo "</Directory>" >> httpd.conf
 
 USER irteamsu
 
@@ -336,7 +323,6 @@ RUN sudo chown root:irteam tomcat1/bin/startup.sh \
     && sudo chmod 4755 tomcat1/bin/startup.sh \
     && sudo chown root:irteam tomcat2/bin/startup.sh \
     && sudo chmod 4755 tomcat2/bin/startup.sh
-
 
 
 # USER irteam
