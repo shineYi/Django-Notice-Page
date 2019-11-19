@@ -16,7 +16,9 @@ RUN mkdir /home1 \
 RUN echo 'export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.232.b09-0.el7_7.x86_64' >> /etc/profile \
     && echo 'export CLASSPATH=$JAVA_HOME/lib:$JAVA_HOME/jre/lib/ext:$JAVA_HOME/lib/tools.jar' >> /etc/profile \
     && echo 'export APACHE_HOME=/home1/irteam/apps/apache' >> /etc/profile \
-    && echo 'PATH=/bin:/usr/bin:/usr/local/bin:$JAVA_HOME/bin:/home1/irteam/apps/tomcat1/bin:/home1/irteam/apps/tomcat2/bin:$APACHE_HOME/bin' >> /etc/profile \
+    && echo 'export APP_HOME=/home1/irteam/apps' >> /etc/profile \
+    && echo 'export LD_LIBRARY_PATH=$APP_HOME/mysql/lib:$APP_HOME/python/lib' >> /etc/profile \
+    && echo 'PATH=/bin:/usr/bin:/usr/local/bin:$JAVA_HOME/bin:/home1/irteam/apps/tomcat1/bin:/home1/irteam/apps/tomcat2/bin:$APACHE_HOME/bin:$APP_HOME/mysql/bin:$APP_HOME/python/bin' >> /etc/profile \
     && source /etc/profile
 
 RUN /usr/bin/localedef --force --inputfile en_US --charmap UTF-8 en_US.UTF-8 && \
@@ -41,12 +43,12 @@ RUN sudo yum -y install libxml2 libxml2-devel \
     && sudo yum -y install gd gd-devel postfix unzip \
     && sudo yum -y install gettext autoconf automake net-snmp net-snmp-utils \
     && sudo yum -y install glibc epel-release perl-Net-SNMP \
-    && sudo yum install -y perl-XML-XPath perl-libwww-perl \
-    && sudo yum remove -y mariadb-libs-5.5.64-1.el7.x86_64
+    && sudo yum install -y perl-XML-XPath perl-libwww-perl 
 
 RUN sudo yum groupinstall -y "Development Tools" \
     && sudo yum install -y readline-devel sqlite-devel \
-    && sudo yum install -y libffi-dev
+    && sudo yum install -y libffi-devel \
+    && sudo yum remove -y mariadb-libs-5.5.64-1.el7.x86_64
 
 RUN sudo chmod 755 /home1/irteam
 
@@ -130,7 +132,8 @@ RUN ./configure --prefix=/home1/irteam/apps/python --enable-shared \
     && make && make install
 
 WORKDIR /home1/irteam/apps/mod_wsgi-4.6.5/
-RUN ./configure --prefix=/home1/irteam/apps/mod_wsgi --with-apxs=/home1/irteam/apps/apache/bin/apxs --with-python=/home1/irteam/apps/python/bin/python3.7 \
+RUN source /etc/profile \
+    && ./configure --prefix=/home1/irteam/apps/mod_wsgi --with-apxs=/home1/irteam/apps/apache/bin/apxs --with-python=/home1/irteam/apps/python/bin/python3.7 \
     && make && make install
 
 
@@ -255,7 +258,7 @@ RUN echo -e 'symbolic-links=0\nskip-external-locking\nskip-grant-tables' >> etc/
 
 RUN bin/mysqld --initialize \ 
     && support-files/mysql.server start \
-    && bin/mysql <<< "UPDATE mysql.user SET authentication_string=PASSWORD('root1234') WHERE user='root' AND Host='localhost'; FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root1234';" \ 
+    && bin/mysql <<< "UPDATE mysql.user SET authentication_string=PASSWORD('root1234') WHERE user='root' AND Host='localhost'; FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root1234'; create database myboard_db; grant all on myboard_db.* to 'djangoadmin'@'%' identified by 'django12'; grant all on myboard_db.* to 'djangoadmin'@'localhost' identified by 'django12'; FLUSH PRIVILEGES;" \ 
     && sed -i '$d' etc/my.cnf \
     && support-files/mysql.server stop
 
@@ -275,8 +278,7 @@ RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
 
 
 # Set shortcut
-echo "export APP_HOME=/home1/irteam/apps" >> ~/.bashrc \
-&& echo "export LD_LIBRARY_PATH=\$APP_HOME/python/lib" >> ~/.bashrc \
+RUN echo "export APP_HOME=/home1/irteam/apps" >> ~/.bashrc \
 && echo "alias apache-start=\"\$APP_HOME/apache/bin/httpd -k start\"" >> ~/.bashrc \
 && echo "alias apache-stop=\"\$APP_HOME/apache/bin/httpd -k stop\"" >> ~/.bashrc \
 && echo "alias apache-restart=\"\$APP_HOME/apache/bin/httpd -k restart\"" >> ~/.bashrc \
@@ -290,21 +292,24 @@ echo "export APP_HOME=/home1/irteam/apps" >> ~/.bashrc \
 && echo "alias python=\"\$APP_HOME/python/bin/python3.7\"" >> ~/.bashrc \
 && echo "alias pip=\"\$APP_HOME/python/bin/pip3.7\"" >> ~/.bashrc
 
-
 # Create Django Project
-WORKDIR /home1/irteam/apps/python
-RUN pip install --upgrade pip \
-    && pip install django==2.1.* \
-    && bin/django-admin startproject django_board . \
+WORKDIR /home1/irteam/apps/python/bin
+RUN source /etc/profile \
+    && ./pip3.7 install --upgrade pip \
+    && ./pip3.7 install django==2.1.* \
+    && ./django-admin startproject django_board . \
     && ln -s /home1/irteam/apps/python/bin/django_board ~/django_board
 
 RUN echo "STATIC_ROOT = os.path.join(BASE_DIR, \"static/\")" >> django_board/settings.py \
-    sed -i "28s/\[\]/\'*\'/" django_board/settings.py
+    && sed -i "28s/\[\]/\'*\'/" django_board/settings.py \
+    && sed -i "113s/UTC/Asia\/Seoul/" django_board/settings.py \
+    && sed -i "119s/True/False/" django_board/settings.py
 
 # Setting Apache for Connect Django
 WORKDIR /home1/irteam/apps/apache/conf
-RUN echo "LoadFile /home1/irteam/apps/python/lib/libpython3.7m.so.1.0" >> httpd.conf \
-    && echo "LoadModule wsgi_module modules/mod_wsgi.so" >> httpd.conf \
+RUN perl -p -i -e '$.==65 and print "LoadFile /home1/irteam/apps/mysql/lib/libmysqlclient.so.20\n"' httpd.conf \
+    && perl -p -i -e '$.==66 and print "LoadFile /home1/irteam/apps/python/lib/libpython3.7m.so.1.0\n"' httpd.conf \
+    && perl -p -e '$.==67 and print "LoadModule wsgi_module modules/mod_wsgi.so\n"' httpd.conf \
     && echo "WSGIScriptAlias / /home1/irteam/django_board/wsgi.py" >> httpd.conf \
     && echo "WSGIPythonPath /home1/irteam/apps/python/bin" >> httpd.conf \
     && echo "<Directory /home1/irteam/django_board>" >> httpd.conf \
@@ -312,6 +317,53 @@ RUN echo "LoadFile /home1/irteam/apps/python/lib/libpython3.7m.so.1.0" >> httpd.
     && echo "Require all granted" >> httpd.conf \
     && echo "</Files>" >> httpd.conf \
     && echo "</Directory>" >> httpd.conf
+
+
+# Create django app
+WORKDIR /home1/irteam/apps/python/bin
+RUN source /etc/profile \
+    && ./python3.7 manage.py startapp myboard \
+    && sed -i "39s/,/,\n    'myboard',/" django_board/settings.py \
+    && perl -p -i -e '$.==18 and print "from django.conf.urls import include\n"' django_board/urls.py \
+    && sed -i "21s/),/),\n    path('', include('myboard.urls')),/" django_board/urls.py
+
+
+# Connect Mysql
+RUN source /etc/profile \
+    && ./pip3.7 install mysqlclient \
+    && sed -i "79s/sqlite3/mysql/" django_board/settings.py \
+    && sed -i "80s/os.path.join(BASE_DIR, 'db.sqlite3')/'myboard_db'/" django_board/settings.py \
+    && perl -p -i -e "$.==80 and print '\'USER\': \'djangoadmin\','" django_board/settings.py \
+    && perl -p -i -e "$.==80 and print '\'PASSWORD\': \'django12\','" django_board/settings.py \
+    && perl -p -i -e "$.==80 and print '\'HOST\': \'127.0.0.1\','" django_board/settings.py \
+    && perl -p -i -e "$.==80 and print '\'PORT\': \'13306\','" django_board/settings.py
+
+RUN echo "from django.conf import settings" >> myboard/models.py \
+    && echo "from django.utils import timezone" >> myboard/models.py \
+    && echo "class Post(models.Model):" >> myboard/models.py \
+    && echo "    id = models.AutoField(primary_key=True)" >> myboard/models.py \
+    && echo "    title = models.CharField(max_length=200)" >> myboard/models.py \
+    && echo "    text = models.TextField()" >> myboard/models.py \
+    && echo "    created_date = models.DateTimeField(default=timezone.now)" >> myboard/models.py \
+    && echo "    def publish(self):" >> myboard/models.py \
+    && echo "        self.save()" >> myboard/models.py \
+    && echo "    def __str__(self):" >> myboard/models.py \
+    && echo "        return self.title" >> myboard/models.py
+
+WORKDIR /home1/irteam/apps/python/bin/myboard
+RUN touch urls.py \
+    && echo "from django.urls import path" >> urls.py \
+    && echo "from . import views" >> urls.py \
+    && echo "urlpatterns = [" >> urls.py \
+    && echo "    path('', views.post_list)," >> urls.py \
+    && echo "]" >> urls.py
+
+RUN echo "def post_list(request):" >> views.py \
+    && echo "    return render(request, 'myboard/post_list.html', {})" >> views.py
+
+RUN mkdir -p templates/myboard \
+    && touch post_list.html
+
 
 USER irteamsu
 
