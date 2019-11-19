@@ -309,7 +309,7 @@ RUN echo "STATIC_ROOT = os.path.join(BASE_DIR, \"static/\")" >> django_board/set
 WORKDIR /home1/irteam/apps/apache/conf
 RUN perl -p -i -e '$.==65 and print "LoadFile /home1/irteam/apps/mysql/lib/libmysqlclient.so.20\n"' httpd.conf \
     && perl -p -i -e '$.==66 and print "LoadFile /home1/irteam/apps/python/lib/libpython3.7m.so.1.0\n"' httpd.conf \
-    && perl -p -e '$.==67 and print "LoadModule wsgi_module modules/mod_wsgi.so\n"' httpd.conf \
+    && perl -p -i -e '$.==67 and print "LoadModule wsgi_module modules/mod_wsgi.so\n"' httpd.conf \
     && echo "WSGIScriptAlias / /home1/irteam/django_board/wsgi.py" >> httpd.conf \
     && echo "WSGIPythonPath /home1/irteam/apps/python/bin" >> httpd.conf \
     && echo "<Directory /home1/irteam/django_board>" >> httpd.conf \
