@@ -253,12 +253,11 @@ RUN echo -e 'default-storage-engine = InnoDB\ninnodb_buffer_pool_size = 503MB\ni
 RUN echo -e 'symbolic-links=0\nskip-external-locking\nskip-grant-tables' >> etc/my.cnf
 
 
-
 # Change root passwd on MySQL
 
 RUN bin/mysqld --initialize \ 
     && support-files/mysql.server start \
-    && bin/mysql <<< "UPDATE mysql.user SET authentication_string=PASSWORD('root1234') WHERE user='root' AND Host='localhost'; FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root1234'; create database myboard_db; grant all on myboard_db.* to 'djangoadmin'@'%' identified by 'django12'; grant all on myboard_db.* to 'djangoadmin'@'localhost' identified by 'django12'; FLUSH PRIVILEGES;" \ 
+    && bin/mysql <<< "UPDATE mysql.user SET authentication_string=PASSWORD('root1234') WHERE user='root' AND Host='localhost'; FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root1234'; create database myboard_db; grant all on myboard_db.* to 'djangoadmin'@'%' identified by 'django12'; grant all on myboard_db.* to 'djangoadmin'@'localhost' identified by 'django12'; FLUSH PRIVILEGES;\q" \ 
     && sed -i '$d' etc/my.cnf \
     && support-files/mysql.server stop
 
@@ -297,13 +296,16 @@ WORKDIR /home1/irteam/apps/python/bin
 RUN source /etc/profile \
     && ./pip3.7 install --upgrade pip \
     && ./pip3.7 install django==2.1.* \
+    && ./pip3.7 install mysqlclient \
     && ./django-admin startproject django_board . \
-    && ln -s /home1/irteam/apps/python/bin/django_board ~/django_board
+    && ./python3.7 manage.py startapp myboard \
+    && ln -s /home1/irteam/apps/python/bin/django_board ~/django_board \
+    && rm -rf django_board && rm -rf myboard
 
-RUN echo "STATIC_ROOT = os.path.join(BASE_DIR, \"static/\")" >> django_board/settings.py \
-    && sed -i "28s/\[\]/\'*\'/" django_board/settings.py \
-    && sed -i "113s/UTC/Asia\/Seoul/" django_board/settings.py \
-    && sed -i "119s/True/False/" django_board/settings.py
+RUN git clone https://github.com/shineYi/Django-Myboard.git \
+    && mv Django-Myboard/django_board ./django_board \
+    && mv Django-Myboard/myboard ./myboard \
+    && rm -rf Django-Myboard
 
 # Setting Apache for Connect Django
 WORKDIR /home1/irteam/apps/apache/conf
@@ -318,51 +320,6 @@ RUN perl -p -i -e '$.==65 and print "LoadFile /home1/irteam/apps/mysql/lib/libmy
     && echo "</Files>" >> httpd.conf \
     && echo "</Directory>" >> httpd.conf
 
-
-# Create django app
-WORKDIR /home1/irteam/apps/python/bin
-RUN source /etc/profile \
-    && ./python3.7 manage.py startapp myboard \
-    && sed -i "39s/,/,\n    'myboard',/" django_board/settings.py \
-    && perl -p -i -e '$.==18 and print "from django.conf.urls import include\n"' django_board/urls.py \
-    && sed -i "21s/),/),\n    path('', include('myboard.urls')),/" django_board/urls.py
-
-
-# Connect Mysql
-RUN source /etc/profile \
-    && ./pip3.7 install mysqlclient \
-    && sed -i "79s/sqlite3/mysql/" django_board/settings.py \
-    && sed -i "80s/os.path.join(BASE_DIR, 'db.sqlite3')/'myboard_db'/" django_board/settings.py \
-    && perl -p -i -e "$.==80 and print '\'USER\': \'djangoadmin\','" django_board/settings.py \
-    && perl -p -i -e "$.==80 and print '\'PASSWORD\': \'django12\','" django_board/settings.py \
-    && perl -p -i -e "$.==80 and print '\'HOST\': \'127.0.0.1\','" django_board/settings.py \
-    && perl -p -i -e "$.==80 and print '\'PORT\': \'13306\','" django_board/settings.py
-
-RUN echo "from django.conf import settings" >> myboard/models.py \
-    && echo "from django.utils import timezone" >> myboard/models.py \
-    && echo "class Post(models.Model):" >> myboard/models.py \
-    && echo "    id = models.AutoField(primary_key=True)" >> myboard/models.py \
-    && echo "    title = models.CharField(max_length=200)" >> myboard/models.py \
-    && echo "    text = models.TextField()" >> myboard/models.py \
-    && echo "    created_date = models.DateTimeField(default=timezone.now)" >> myboard/models.py \
-    && echo "    def publish(self):" >> myboard/models.py \
-    && echo "        self.save()" >> myboard/models.py \
-    && echo "    def __str__(self):" >> myboard/models.py \
-    && echo "        return self.title" >> myboard/models.py
-
-WORKDIR /home1/irteam/apps/python/bin/myboard
-RUN touch urls.py \
-    && echo "from django.urls import path" >> urls.py \
-    && echo "from . import views" >> urls.py \
-    && echo "urlpatterns = [" >> urls.py \
-    && echo "    path('', views.post_list)," >> urls.py \
-    && echo "]" >> urls.py
-
-RUN echo "def post_list(request):" >> views.py \
-    && echo "    return render(request, 'myboard/post_list.html', {})" >> views.py
-
-RUN mkdir -p templates/myboard \
-    && touch post_list.html
 
 
 USER irteamsu
