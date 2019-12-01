@@ -258,7 +258,7 @@ RUN echo -e 'symbolic-links=0\nskip-external-locking\nskip-grant-tables' >> etc/
 
 RUN bin/mysqld --initialize \ 
     && support-files/mysql.server start \
-    && bin/mysql <<< "UPDATE mysql.user SET authentication_string=PASSWORD('root1234') WHERE user='root' AND Host='localhost'; FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root1234'; create database myboard_db; grant all on myboard_db.* to 'djangoadmin'@'%' identified by 'django12'; grant all on myboard_db.* to 'djangoadmin'@'localhost' identified by 'django12';create database zabbix; grant all privileges on zabbix.* to 'zabbixadmin'@'localhost' identified by 'zabbix12'; grant all privileges on zabbix.* to 'zabbixadmin'@'%' identified by 'zabbix12'; FLUSH PRIVILEGES;\q" \ 
+    && bin/mysql <<< "UPDATE mysql.user SET authentication_string=PASSWORD('root1234') WHERE user='root' AND Host='localhost'; FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root1234'; create database myboard_db; grant all on myboard_db.* to 'djangoadmin'@'%' identified by 'django12'; grant all on myboard_db.* to 'djangoadmin'@'localhost' identified by 'django12';create database zabbix; grant all privileges on zabbix.* to 'zabbixadmin'@'localhost' identified by 'zabbix12'; grant all privileges on zabbix.* to 'zabbixadmin'@'%' identified by 'zabbix12'; GRANT USAGE,REPLICATION CLIENT,PROCESS,SHOW DATABASES,SHOW VIEW ON *.* TO 'zabbixadmin'@'%'; GRANT USAGE,REPLICATION CLIENT,PROCESS,SHOW DATABASES,SHOW VIEW ON *.* TO 'zabbixadmin'@'localhost'; FLUSH PRIVILEGES;\q" \ 
     && sed -i '$d' etc/my.cnf \
     && bin/mysql zabbix < /home1/irteam/apps/zabbix-4.4.1/database/mysql/schema.sql \
     && bin/mysql zabbix < /home1/irteam/apps/zabbix-4.4.1/database/mysql/images.sql \
@@ -268,16 +268,16 @@ RUN bin/mysqld --initialize \
 
 # Create Tomcat manager account
 WORKDIR /home1/irteam/apps/tomcat1/conf/
-RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
-    && echo "<role rolename="manager-script"/>" >> tomcat-user.xml \
-    && echo "<role rolename="manager-status"/>" >> tomcat-user.xml \
-    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-user.xml
+RUN echo "<role rolename="manager-gui"/>" >> tomcat-users.xml \
+    && echo "<role rolename="manager-script"/>" >> tomcat-users.xml \
+    && echo "<role rolename="manager-status"/>" >> tomcat-users.xml \
+    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-users.xml
 
 WORKDIR /home1/irteam/apps/tomcat2/conf/
-RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
-    && echo "<role rolename="manager-script"/>" >> tomcat-user.xml \
-    && echo "<role rolename="manager-status"/>" >> tomcat-user.xml \
-    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-user.xml
+RUN echo "<role rolename="manager-gui"/>" >> tomcat-users.xml \
+    && echo "<role rolename="manager-script"/>" >> tomcat-users.xml \
+    && echo "<role rolename="manager-status"/>" >> tomcat-users.xml \
+    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-users.xml
 
 
 # Set shortcut
@@ -303,12 +303,22 @@ RUN ./configure --prefix=/home1/irteam/apps/zabbix --enable-server --enable-agen
 RUN cd conf/zabbix_agentd \
     && cp userparameter_mysql.conf ~/apps/zabbix/etc/zabbix_agentd.conf.d/
 
-# Set zabbix account
+# Set zabbix frontend pages on apache
 WORKDIR /home1/irteam/apps
 RUN mkdir apache/htdocs/zabbix \
     && cd zabbix-4.4.1/frontends/php \
     && cp -a . /home1/irteam/apps/apache/htdocs/zabbix
 
+# Change php setting for initial zabbix start condition
+WORKDIR /home1/irteam/apps/apache/conf
+RUN sed -i "672s/8/16/" php.ini \
+&& sed -i "384s/30/300/" php.ini \
+&& sed -i "394s/60/300/" php.ini \
+&& sed -i "923s/;//" php.ini \
+&& sed -i "923s/=/= Asia\/Seoul/" php.ini
+
+
+# zabbix setting
 WORKDIR /home1/irteam/apps/zabbix/etc
 RUN mkdir /home1/irteam/logs/zabbix
 RUN sed -i "30s/tmp/home1\/irteam\/logs\/zabbix/" zabbix_agentd.conf \
@@ -322,15 +332,14 @@ RUN sed -i "38s/tmp/home1\/irteam\/logs\/zabbix/" zabbix_server.conf \
     && sed -i "125s/=/= \/home1\/irteam\/apps\/mysql\/tmp\/mysqld.sock/" zabbix_server.conf \
     && sed -i "125s/#//" zabbix_server.conf \
     && sed -i "133s/=/= 13306/" zabbix_server.conf \
-    && sed -i "133s/#//" zabbix_server.conf
+    && sed -i "133s/#//" zabbix_server.conf \
+    && sed -i "282s/#//" zabbix_server.conf \
+    && sed -i "282s/=/=127.0.0.1/" zabbix_server.conf \
+    && sed -i "290s/#//"  zabbix_server.conf \
+    && sed -i "298s/#//"  zabbix_server.conf \
+    && sed -i "298s/0/5/"  zabbix_server.conf
 
-WORKDIR /home1/irteam/apps/apache/conf
-RUN sed -i "672s/8/16/" php.ini \
-&& sed -i "384s/30/300/" php.ini \
-&& sed -i "394s/60/300/" php.ini \
-&& sed -i "923s/;//" php.ini \
-&& sed -i "923s/=/= Asia\/Seoul/" php.ini
-
+# Setting for MySQL Connection
 WORKDIR /home1/irteam/apps/apache/htdocs/zabbix/conf
 RUN touch zabbix.conf.php \
     && echo -e "<?php\nglobal \$DB;\n\n" >> zabbix.conf.php \
@@ -350,12 +359,24 @@ RUN touch zabbix.conf.php \
 WORKDIR /home1/irteam/apps/zabbix/lib
 RUN touch .my.cnf \
     && echo "[client]" >> .my.cnf \
-    && echo "user=root" >> .my.cnf \
-    && echo "password=root1234" >> .my.cnf
+    && echo "user=zabbixadmin" >> .my.cnf \
+    && echo "password=zabbix12" >> .my.cnf
 
 
 WORKDIR /home1/irteam/apps/zabbix-4.4.1/conf/zabbix_agentd
 RUN cp userparameter_mysql.conf ~/apps/zabbix/etc/zabbix_agentd.conf.d
+
+
+# Setting for Tomcat Connection
+WORKDIR /home1/irteam/apps/tomcat1/bin
+RUN sed -i "339s/S\"/S -Dcom.sun.management.jmxremote \
+                   -Dcom.sum.management.jmxremote.port=12345 \
+                   -Djava.rmi.server.hostname=127.0.0.1 \
+                   -Dcom.sun.management.jmxremote.authenticate=false \
+                   -Dcom.sun.management.jmxremote.ssl=false\"/" catalina.sh
+
+# TODO: tomcat2 setting
+
 
 # Create Django Project
 WORKDIR /home1/irteam/apps/python/bin
