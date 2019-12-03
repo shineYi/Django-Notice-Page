@@ -67,10 +67,9 @@ RUN wget http://apache.mirror.cdnetworks.com//apr/apr-1.7.0.tar.gz \
     && wget https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-8.0.18.tar.gz \
     && wget http://museum.php.net/php5/php-5.5.0.tar.gz \
     && wget https://github.com/GrahamDumpleton/mod_wsgi/archive/4.6.5.tar.gz \
-    && wget https://sourceforge.net/projects/zabbix/files/ZABBIX%20Latest%20Stable/4.4.1/zabbix-4.4.1.tar.gz/download
+    && wget https://sourceforge.net/projects/zabbix/files/ZABBIX%20Latest%20Stable/4.4.1/zabbix-4.4.1.tar.gz
 
 RUN find . -name "*.tar.gz" -exec tar xvfz {} \;
-RUN tar xvfz download
 
 RUN wget https://www.python.org/ftp/python/3.7.4/Python-3.7.4.tgz \
     && tar xvfz Python-3.7.4.tgz
@@ -239,19 +238,19 @@ RUN sed -i "22s/8005/8205/" server.xml \
 # Setting MySQL
 
 WORKDIR /home1/irteam/apps/mysql/
-RUN mkdir tmp etc && touch etc/my.cnf
+RUN mkdir tmp etc && touch etc/my.cnf && mkdir /home1/irteam/logs/mysql
 
-RUN echo -e '[client]\nuser=root\npassword=root1234\nport = 13306\nsocket = /home1/irteam/apps/mysql/tmp/mysqld.sock' >> etc/my.cnf\
-    && echo -e '[mysqld]\nuser=root\nport = 13306\nbasedir=/home1/irteam/apps/mysql\ndatadir=/home1/irteam/apps/mysql/data\nsocket=/home1/irteam/apps/mysql/tmp/mysqld.sock' >> etc/my.cnf \
-    && echo -e 'log-error=/home1/irteam/apps/mysql/data/mysqld.log\npid-file=/home1/irteam/apps/mysql/tmp/mysqld.pid' >> etc/my.cnf 
+RUN echo -e '[client]\nuser=root\npassword=root1234\nport = 13306\nsocket = /home1/irteam/apps/mysql/tmp/mysqld.sock' >> etc/my.cnf
 
-RUN echo -e 'key_buffer_size = 384M\nmax_allowed_packet = 1M\ntable_open_cache = 512\nsort_buffer_size = 2M\nread_buffer_size = 2M\nread_rnd_buffer_size = 8M\nthread_cache_size = 8\nquery_cache_size = 32M' >> etc/my.cnf \
-    && echo -e 'max_connections = 1000\nmax_connect_errors = 1000\nwait_timeout= 60\nexplicit_defaults_for_timestamp' >> etc/my.cnf \
-    && echo -e 'character-set-client-handshake=FALSE\ninit_connect = SET collation_connection = utf8_general_ci\ninit_connect = SET NAMES utf8\ncharacter-set-server = utf8\ncollation-server = utf8_general_ci' >> etc/my.cnf
+RUN echo -e '[mysqld]\nuser=root\nport = 13306\nbasedir=/home1/irteam/apps/mysql\ndatadir=/home1/irteam/apps/mysql/data\nsocket=/home1/irteam/apps/mysql/tmp/mysqld.sock' >> etc/my.cnf
 
-RUN echo -e 'default-storage-engine = InnoDB\ninnodb_buffer_pool_size = 503MB\ninnodb_data_file_path = ibdata1:10M:autoextend\ninnodb_write_io_threads = 8\ninnodb_read_io_threads = 8\ninnodb_thread_concurrency = 16\ninnodb_flush_log_at_trx_commit = 1\ninnodb_log_buffer_size = 8M\ninnodb_log_file_size = 128M\ninnodb_log_files_in_group = 3\ninnodb_max_dirty_pages_pct = 90\ninnodb_lock_wait_timeout = 120' >> etc/my.cnf
+RUN echo -e 'log-error=/home1/irteam/logs/mysql/mysqld.log\npid-file=/home1/irteam/apps/mysql/tmp/mysqld.pid' >> etc/my.cnf
 
-RUN echo -e 'symbolic-links=0\nskip-external-locking\nskip-grant-tables' >> etc/my.cnf
+RUN echo -e 'skip-character-set-client-handshake\ninit_connect = SET collation_connection = utf8_general_ci\ninit_connect = SET NAMES utf8\ncharacter-set-server = utf8\ncollation-server = utf8_general_ci' >> etc/my.cnf
+
+RUN echo -e 'default-storage-engine = InnoDB\ninnodb_buffer_pool_size = 503MB' >> etc/my.cnf
+
+RUN echo -e 'explicit_defaults_for_timestamp\nskip-grant-tables' >> etc/my.cnf
 
 
 # Change root passwd on MySQL
@@ -268,16 +267,14 @@ RUN bin/mysqld --initialize \
 
 # Create Tomcat manager account
 WORKDIR /home1/irteam/apps/tomcat1/conf/
-RUN echo "<role rolename="manager-gui"/>" >> tomcat-users.xml \
-    && echo "<role rolename="manager-script"/>" >> tomcat-users.xml \
-    && echo "<role rolename="manager-status"/>" >> tomcat-users.xml \
-    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-users.xml
+RUN sed -i '$d' tomcat-users.xml \
+    && echo "<role rolename=\"manager-gui\"/>" >> tomcat-users.xml \
+    && echo "<role rolename=\"manager-script\"/>" >> tomcat-users.xml \
+    && echo "<role rolename=\"manager-status\"/>" >> tomcat-users.xml \
+    && echo "<user username=\"tomcatadmin\" password=\"tomcat12\" roles=\"manager-gui,manager-script,manager-status\"/>" >> tomcat-users.xml \
+    && echo "</tomcat-users>" >>tomcat-users.xml
 
-WORKDIR /home1/irteam/apps/tomcat2/conf/
-RUN echo "<role rolename="manager-gui"/>" >> tomcat-users.xml \
-    && echo "<role rolename="manager-script"/>" >> tomcat-users.xml \
-    && echo "<role rolename="manager-status"/>" >> tomcat-users.xml \
-    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-users.xml
+RUN cp tomcat-users.xml /home1/irteam/apps/tomcat2/conf/
 
 
 # Set shortcut
@@ -315,7 +312,8 @@ RUN sed -i "672s/8/16/" php.ini \
 && sed -i "384s/30/300/" php.ini \
 && sed -i "394s/60/300/" php.ini \
 && sed -i "923s/;//" php.ini \
-&& sed -i "923s/=/= Asia\/Seoul/" php.ini
+&& sed -i "923s/=/= Asia\/Seoul/" php.ini \
+&& sed -i "1134s/=/= 13306/" php.ini
 
 
 # zabbix setting
@@ -338,6 +336,14 @@ RUN sed -i "38s/tmp/home1\/irteam\/logs\/zabbix/" zabbix_server.conf \
     && sed -i "290s/#//"  zabbix_server.conf \
     && sed -i "298s/#//"  zabbix_server.conf \
     && sed -i "298s/0/5/"  zabbix_server.conf
+
+
+# Setting for Apache Connection
+WORKDIR /home1/irteam/apps/apache/conf
+RUN echo "<Location \"/server-status\">" >> httpd.conf \
+    && echo "SetHandler server-status" >> httpd.conf \
+    && echo "</Location>" >> httpd.conf
+
 
 # Setting for MySQL Connection
 WORKDIR /home1/irteam/apps/apache/htdocs/zabbix/conf
