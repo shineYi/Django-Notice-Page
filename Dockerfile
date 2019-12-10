@@ -231,7 +231,10 @@ RUN sed -i "22s/8005/8205/" server.xml \
     && sed -i "69s/8080/8081/" server.xml \
     && sed -i "116s/8009/8209/" server.xml \
     && sed -i "133s/<\!--//" server.xml \
-    && sed -i "135s/-->//" server.xml
+    && sed -i "135s/-->//" server.xml \
+    && sed -i "134s/\///" server.xml \
+    && perl -p -i -e '$.==135 and print "</Cluster>"' server.xml \
+    && perl -p -i -e '$.==135 and print "<Receiver className=\"org.apache.catalina.tribes.transport.nio.NioReceiver\" port=\"4001\"/>"' server.xml
 
 
 
@@ -374,14 +377,8 @@ RUN cp userparameter_mysql.conf ~/apps/zabbix/etc/zabbix_agentd.conf.d
 
 
 # Setting for Tomcat Connection
-WORKDIR /home1/irteam/apps/tomcat1/bin
-RUN sed -i "339s/S\"/S -Dcom.sun.management.jmxremote \
-                   -Dcom.sum.management.jmxremote.port=12345 \
-                   -Djava.rmi.server.hostname=127.0.0.1 \
-                   -Dcom.sun.management.jmxremote.authenticate=false \
-                   -Dcom.sun.management.jmxremote.ssl=false\"/" catalina.sh
-
-# TODO: tomcat2 setting
+WORKDIR /home1/irteam/apps/zabbix/sbin/zabbix_java
+RUN sed -i "46s/#//" settings.sh && sed -i "47s/#//" settings.sh
 
 
 # Create Django Project
