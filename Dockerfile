@@ -40,15 +40,14 @@ RUN sudo yum -y install tar vim telnet net-tools curl openssl openssl-devel \
  && sudo yum clean all
 
 RUN sudo yum -y install libxml2 libxml2-devel \
-    && sudo yum -y install gd gd-devel postfix unzip \
-    && sudo yum -y install gettext autoconf automake net-snmp net-snmp-utils \
-    && sudo yum -y install glibc epel-release perl-Net-SNMP \
-    && sudo yum install -y perl-XML-XPath perl-libwww-perl 
-
-RUN sudo yum groupinstall -y "Development Tools" \
+    && sudo yum groupinstall -y "Development Tools" \
     && sudo yum install -y readline-devel sqlite-devel \
     && sudo yum install -y libffi-devel \
+    && sudo yum -y install libjpeg-devel freetype-devel php-bcmath php-mbstring php-gd libpng-devel \
+    && sudo yum -y install net-snmp net-snmp-devel libevent libevent-devel curl-devel \
     && sudo yum remove -y mariadb-libs-5.5.64-1.el7.x86_64
+
+#RUN sudo ln -s /usr/lib64/libnetsnmp.so.31.0.2 /usr/lib64/libnetsnmp.so
 
 RUN sudo chmod 755 /home1/irteam
 
@@ -67,9 +66,8 @@ RUN wget http://apache.mirror.cdnetworks.com//apr/apr-1.7.0.tar.gz \
     && wget https://downloads.mysql.com/archives/get/file/mysql-5.7.27.tar.gz \
     && wget https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-8.0.18.tar.gz \
     && wget http://museum.php.net/php5/php-5.5.0.tar.gz \
-    && wget https://github.com/NagiosEnterprises/nagioscore/archive/nagios-4.4.5.tar.gz \
-    && wget --no-check-certificate -O nagios-plugins.tar.gz https://github.com/nagios-plugins/nagios-plugins/archive/release-2.2.1.tar.gz \
-    && wget https://github.com/GrahamDumpleton/mod_wsgi/archive/4.6.5.tar.gz
+    && wget https://github.com/GrahamDumpleton/mod_wsgi/archive/4.6.5.tar.gz \
+    && wget https://sourceforge.net/projects/zabbix/files/ZABBIX%20Latest%20Stable/4.4.1/zabbix-4.4.1.tar.gz
 
 RUN find . -name "*.tar.gz" -exec tar xvfz {} \;
 
@@ -103,12 +101,6 @@ WORKDIR /home1/irteam/apps/httpd-2.4.41
 RUN ./configure --prefix=/home1/irteam/apps/apache --enable-module=so --enable-mods-shared=ssl --with-ssl=/usr/lib64/openssl --enable-ssl=shared --with-pcre=/home1/irteam/apps/pcre/bin/pcre-config \
     && make && make install
 
-WORKDIR /home1/irteam/apps/php-5.5.0/
-RUN ./configure --prefix=/home1/irteam/apps/php --with-apxs2=/home1/irteam/apps/apache/bin/apxs \
-    && make && make install
-
-RUN cp php.ini-development ~/apps/apache/conf/php.ini
-
 WORKDIR /home1/irteam/apps/mysql-5.7.27/
 RUN cmake \
     -DCMAKE_INSTALL_PREFIX=/home1/irteam/apps/mysql \
@@ -119,9 +111,17 @@ RUN cmake \
     -DDEFAULT_COLLATION=utf8_general_ci \
     -DWITH_EXTRA_CHARSETS=all \
     -DDOWNLOAD_BOOST=1 \
-    -DWITH_BOOST=$HOME/apps/my_boost
+    -DWITH_BOOST=/home1/irteam/apps/my_boost
 
 RUN make && make install
+
+WORKDIR /home1/irteam/apps/php-5.5.0/
+RUN ./configure --prefix=/home1/irteam/apps/php --with-apxs2=/home1/irteam/apps/apache/bin/apxs --with-mysql=mysqlnd  --with-pdo-mysql=mysqlnd --with-mysqli=mysqlnd --with-libdir=/home1/irteam/apps/mysql/lib --enable-sigchild --with-config-file-path=/home1/irteam/apps/apache/conf --enable-bcmath  --enable-mbstring --enable-sockets --with-gd --with-jpeg-dir=/usr/lib64 --with-freetype-dir=/usr/lib64 \
+    && make && make install
+
+RUN cp php.ini-development ~/apps/apache/conf/php.ini
+WORKDIR /home1/irteam/apps/php/lib/
+RUN ln -s /home1/irteam/apps/apache/conf/php.ini php.ini
 
 WORKDIR /home1/irteam/apps/mod_jk/native/
 RUN ./configure --with-apxs=/home1/irteam/apps/apache/bin/apxs \
@@ -231,49 +231,53 @@ RUN sed -i "22s/8005/8205/" server.xml \
     && sed -i "69s/8080/8081/" server.xml \
     && sed -i "116s/8009/8209/" server.xml \
     && sed -i "133s/<\!--//" server.xml \
-    && sed -i "135s/-->//" server.xml
+    && sed -i "135s/-->//" server.xml \
+    && sed -i "134s/\///" server.xml \
+    && perl -p -i -e '$.==135 and print "</Cluster>"' server.xml \
+    && perl -p -i -e '$.==135 and print "<Receiver className=\"org.apache.catalina.tribes.transport.nio.NioReceiver\" port=\"4001\"/>"' server.xml
 
 
 
 # Setting MySQL
 
 WORKDIR /home1/irteam/apps/mysql/
-RUN mkdir tmp etc && touch etc/my.cnf
+RUN mkdir tmp etc && touch etc/my.cnf && mkdir /home1/irteam/logs/mysql
 
-RUN echo -e '[client]\nuser=root\npassword=root1234\nport = 13306\nsocket = /home1/irteam/apps/mysql/tmp/mysqld.sock' >> etc/my.cnf\
-    && echo -e '[mysqld]\nuser=root\nport = 13306\nbasedir=/home1/irteam/apps/mysql\ndatadir=/home1/irteam/apps/mysql/data\nsocket=/home1/irteam/apps/mysql/tmp/mysqld.sock' >> etc/my.cnf \
-    && echo -e 'log-error=/home1/irteam/apps/mysql/data/mysqld.log\npid-file=/home1/irteam/apps/mysql/tmp/mysqld.pid' >> etc/my.cnf 
+RUN echo -e '[client]\nuser=root\npassword=root1234\nport = 13306\nsocket = /home1/irteam/apps/mysql/tmp/mysqld.sock' >> etc/my.cnf
 
-RUN echo -e 'key_buffer_size = 384M\nmax_allowed_packet = 1M\ntable_open_cache = 512\nsort_buffer_size = 2M\nread_buffer_size = 2M\nread_rnd_buffer_size = 8M\nthread_cache_size = 8\nquery_cache_size = 32M' >> etc/my.cnf \
-    && echo -e 'max_connections = 1000\nmax_connect_errors = 1000\nwait_timeout= 60\nexplicit_defaults_for_timestamp' >> etc/my.cnf \
-    && echo -e 'character-set-client-handshake=FALSE\ninit_connect = SET collation_connection = utf8_general_ci\ninit_connect = SET NAMES utf8\ncharacter-set-server = utf8\ncollation-server = utf8_general_ci' >> etc/my.cnf
+RUN echo -e '[mysqld]\nuser=root\nport = 13306\nbasedir=/home1/irteam/apps/mysql\ndatadir=/home1/irteam/apps/mysql/data\nsocket=/home1/irteam/apps/mysql/tmp/mysqld.sock' >> etc/my.cnf
 
-RUN echo -e 'default-storage-engine = InnoDB\ninnodb_buffer_pool_size = 503MB\ninnodb_data_file_path = ibdata1:10M:autoextend\ninnodb_write_io_threads = 8\ninnodb_read_io_threads = 8\ninnodb_thread_concurrency = 16\ninnodb_flush_log_at_trx_commit = 1\ninnodb_log_buffer_size = 8M\ninnodb_log_file_size = 128M\ninnodb_log_files_in_group = 3\ninnodb_max_dirty_pages_pct = 90\ninnodb_lock_wait_timeout = 120' >> etc/my.cnf
+RUN echo -e 'log-error=/home1/irteam/logs/mysql/mysqld.log\npid-file=/home1/irteam/apps/mysql/tmp/mysqld.pid' >> etc/my.cnf
 
-RUN echo -e 'symbolic-links=0\nskip-external-locking\nskip-grant-tables' >> etc/my.cnf
+RUN echo -e 'skip-character-set-client-handshake\ninit_connect = SET collation_connection = utf8_general_ci\ninit_connect = SET NAMES utf8\ncharacter-set-server = utf8\ncollation-server = utf8_general_ci' >> etc/my.cnf
+
+RUN echo -e 'default-storage-engine = InnoDB\ninnodb_buffer_pool_size = 503MB' >> etc/my.cnf
+
+RUN echo -e 'explicit_defaults_for_timestamp\nskip-grant-tables' >> etc/my.cnf
 
 
 # Change root passwd on MySQL
 
 RUN bin/mysqld --initialize \ 
     && support-files/mysql.server start \
-    && bin/mysql <<< "UPDATE mysql.user SET authentication_string=PASSWORD('root1234') WHERE user='root' AND Host='localhost'; FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root1234'; create database myboard_db; grant all on myboard_db.* to 'djangoadmin'@'%' identified by 'django12'; grant all on myboard_db.* to 'djangoadmin'@'localhost' identified by 'django12'; FLUSH PRIVILEGES;\q" \ 
+    && bin/mysql <<< "UPDATE mysql.user SET authentication_string=PASSWORD('root1234') WHERE user='root' AND Host='localhost'; FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root1234'; create database myboard_db; grant all on myboard_db.* to 'djangoadmin'@'%' identified by 'django12'; grant all on myboard_db.* to 'djangoadmin'@'localhost' identified by 'django12';create database zabbix; grant all privileges on zabbix.* to 'zabbixadmin'@'localhost' identified by 'zabbix12'; grant all privileges on zabbix.* to 'zabbixadmin'@'%' identified by 'zabbix12'; GRANT USAGE,REPLICATION CLIENT,PROCESS,SHOW DATABASES,SHOW VIEW ON *.* TO 'zabbixadmin'@'%'; GRANT USAGE,REPLICATION CLIENT,PROCESS,SHOW DATABASES,SHOW VIEW ON *.* TO 'zabbixadmin'@'localhost'; FLUSH PRIVILEGES;\q" \ 
     && sed -i '$d' etc/my.cnf \
+    && bin/mysql zabbix < /home1/irteam/apps/zabbix-4.4.1/database/mysql/schema.sql \
+    && bin/mysql zabbix < /home1/irteam/apps/zabbix-4.4.1/database/mysql/images.sql \
+    && bin/mysql zabbix < /home1/irteam/apps/zabbix-4.4.1/database/mysql/data.sql \
     && support-files/mysql.server stop
 
 
 # Create Tomcat manager account
 WORKDIR /home1/irteam/apps/tomcat1/conf/
-RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
-    && echo "<role rolename="manager-script"/>" >> tomcat-user.xml \
-    && echo "<role rolename="manager-status"/>" >> tomcat-user.xml \
-    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-user.xml
+RUN sed -i '$d' tomcat-users.xml \
+    && echo "<role rolename=\"manager-gui\"/>" >> tomcat-users.xml \
+    && echo "<role rolename=\"manager-script\"/>" >> tomcat-users.xml \
+    && echo "<role rolename=\"manager-status\"/>" >> tomcat-users.xml \
+    && echo "<user username=\"tomcatadmin\" password=\"tomcat12\" roles=\"manager-gui,manager-script,manager-status\"/>" >> tomcat-users.xml \
+    && echo "</tomcat-users>" >>tomcat-users.xml
 
-WORKDIR /home1/irteam/apps/tomcat2/conf/
-RUN echo "<role rolename="manager-gui"/>" >> tomcat-user.xml \
-    && echo "<role rolename="manager-script"/>" >> tomcat-user.xml \
-    && echo "<role rolename="manager-status"/>" >> tomcat-user.xml \
-    && echo "<user username="tomcatadmin" password="tomcat12" roles="manager-gui,manager-script,manager-status"/>" >> tomcat-user.xml
+RUN cp tomcat-users.xml /home1/irteam/apps/tomcat2/conf/
 
 
 # Set shortcut
@@ -290,6 +294,92 @@ RUN echo "export APP_HOME=/home1/irteam/apps" >> ~/.bashrc \
 && echo "alias mysql-restart=\"\$APP_HOME/mysql/support-files/mysql.server restart\"" >> ~/.bashrc \
 && echo "alias python=\"\$APP_HOME/python/bin/python3.7\"" >> ~/.bashrc \
 && echo "alias pip=\"\$APP_HOME/python/bin/pip3.7\"" >> ~/.bashrc
+
+# Install zabbix
+WORKDIR /home1/irteam/apps/zabbix-4.4.1
+RUN ./configure --prefix=/home1/irteam/apps/zabbix --enable-server --enable-agent --enable-java --enable-ipv6 --with-mysql=/home1/irteam/apps/mysql/bin/mysql_config --with-libcurl --with-libxml2 \
+    && make && make install
+
+RUN cd conf/zabbix_agentd \
+    && cp userparameter_mysql.conf ~/apps/zabbix/etc/zabbix_agentd.conf.d/
+
+# Set zabbix frontend pages on apache
+WORKDIR /home1/irteam/apps
+RUN mkdir apache/htdocs/zabbix \
+    && cd zabbix-4.4.1/frontends/php \
+    && cp -a . /home1/irteam/apps/apache/htdocs/zabbix
+
+# Change php setting for initial zabbix start condition
+WORKDIR /home1/irteam/apps/apache/conf
+RUN sed -i "672s/8/16/" php.ini \
+&& sed -i "384s/30/300/" php.ini \
+&& sed -i "394s/60/300/" php.ini \
+&& sed -i "923s/;//" php.ini \
+&& sed -i "923s/=/= Asia\/Seoul/" php.ini \
+&& sed -i "1134s/=/= 13306/" php.ini
+
+
+# zabbix setting
+WORKDIR /home1/irteam/apps/zabbix/etc
+RUN mkdir /home1/irteam/logs/zabbix
+RUN sed -i "30s/tmp/home1\/irteam\/logs\/zabbix/" zabbix_agentd.conf \
+    && sed -i "287s/#//" zabbix_agentd.conf \
+    && sed -i "287s/usr\/local/home1\/irteam\/apps\/zabbix/" zabbix_agentd.conf
+
+RUN sed -i "38s/tmp/home1\/irteam\/logs\/zabbix/" zabbix_server.conf \
+    && sed -i "110s/x/xadmin/" zabbix_server.conf \
+    && sed -i "118s/=/= zabbix12/" zabbix_server.conf \
+    && sed -i "118s/#//" zabbix_server.conf \
+    && sed -i "125s/=/= \/home1\/irteam\/apps\/mysql\/tmp\/mysqld.sock/" zabbix_server.conf \
+    && sed -i "125s/#//" zabbix_server.conf \
+    && sed -i "133s/=/= 13306/" zabbix_server.conf \
+    && sed -i "133s/#//" zabbix_server.conf \
+    && sed -i "282s/#//" zabbix_server.conf \
+    && sed -i "282s/=/=127.0.0.1/" zabbix_server.conf \
+    && sed -i "290s/#//"  zabbix_server.conf \
+    && sed -i "298s/#//"  zabbix_server.conf \
+    && sed -i "298s/0/5/"  zabbix_server.conf
+
+
+# Setting for Apache Connection
+WORKDIR /home1/irteam/apps/apache/conf
+RUN echo "<Location \"/server-status\">" >> httpd.conf \
+    && echo "SetHandler server-status" >> httpd.conf \
+    && echo "</Location>" >> httpd.conf
+
+
+# Setting for MySQL Connection
+WORKDIR /home1/irteam/apps/apache/htdocs/zabbix/conf
+RUN touch zabbix.conf.php \
+    && echo -e "<?php\nglobal \$DB;\n\n" >> zabbix.conf.php \
+    && echo "\$DB['TYPE']     = 'MYSQL';" >> zabbix.conf.php \
+    && echo "\$DB['SERVER']   = '10.106.223.175';" >> zabbix.conf.php \
+    && echo "\$DB['PORT']     = '13306';" >> zabbix.conf.php \
+    && echo "\$DB['DATABASE'] = 'zabbix';" >> zabbix.conf.php \
+    && echo "\$DB['USER']     = 'zabbixadmin';" >> zabbix.conf.php \
+    && echo "\$DB['PASSWORD'] = 'zabbix12';" >> zabbix.conf.php \
+    && echo "\$DB['SCHEMA'] = '';" >> zabbix.conf.php \
+    && echo "\$ZBX_SERVER      = 'localhost';"  >> zabbix.conf.php \
+    && echo "\$ZBX_SERVER_PORT = '10051';" >> zabbix.conf.php \
+    && echo "\$ZBX_SERVER_NAME = '';" >> zabbix.conf.php \
+    && echo "\$IMAGE_FORMAT_DEFAULT = IMAGE_FORMAT_PNG;" >> zabbix.conf.php 
+
+
+WORKDIR /home1/irteam/apps/zabbix/lib
+RUN touch .my.cnf \
+    && echo "[client]" >> .my.cnf \
+    && echo "user=zabbixadmin" >> .my.cnf \
+    && echo "password=zabbix12" >> .my.cnf
+
+
+WORKDIR /home1/irteam/apps/zabbix-4.4.1/conf/zabbix_agentd
+RUN cp userparameter_mysql.conf ~/apps/zabbix/etc/zabbix_agentd.conf.d
+
+
+# Setting for Tomcat Connection
+WORKDIR /home1/irteam/apps/zabbix/sbin/zabbix_java
+RUN sed -i "46s/#//" settings.sh && sed -i "47s/#//" settings.sh
+
 
 # Create Django Project
 WORKDIR /home1/irteam/apps/python/bin
@@ -312,7 +402,7 @@ WORKDIR /home1/irteam/apps/apache/conf
 RUN perl -p -i -e '$.==65 and print "LoadFile /home1/irteam/apps/mysql/lib/libmysqlclient.so.20\n"' httpd.conf \
     && perl -p -i -e '$.==66 and print "LoadFile /home1/irteam/apps/python/lib/libpython3.7m.so.1.0\n"' httpd.conf \
     && perl -p -i -e '$.==67 and print "LoadModule wsgi_module modules/mod_wsgi.so\n"' httpd.conf \
-    && echo "WSGIScriptAlias / /home1/irteam/django_board/wsgi.py" >> httpd.conf \
+    && echo "WSGIScriptAlias /myboard /home1/irteam/django_board/wsgi.py" >> httpd.conf \
     && echo "WSGIPythonPath /home1/irteam/apps/python/bin" >> httpd.conf \
     && echo "<Directory /home1/irteam/django_board>" >> httpd.conf \
     && echo "<Files wsgi.py>" >> httpd.conf \
